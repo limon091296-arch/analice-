@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and status",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "isActivated": { "type": "boolean" },
+        "email": { "type": "string", "format": "email" }
+      },
+      "required": ["username", "isActivated"]
+    },
+    "Analysis": {
+      "title": "Analysis",
+      "description": "Market analysis result",
+      "type": "object",
+      "properties": {
+        "verdict": { "type": "string", "enum": ["UP", "DOWN", "NEUTRAL"] },
+        "reason": { "type": "string" },
+        "confidence": { "type": "number" },
+        "userId": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["verdict", "confidence", "userId", "timestamp"]
+    },
+    "PaymentRequest": {
+      "title": "Payment Request",
+      "description": "Payment verification request",
+      "type": "object",
+      "properties": {
+        "senderNumber": { "type": "string" },
+        "trxId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["senderNumber", "trxId", "amount", "status", "userId", "createdAt"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "bkashNumber": { "type": "string" }
+      },
+      "required": ["bkashNumber"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/analyses/{analysisId}": {
+      "schema": "Analysis",
+      "description": "Historical analyses"
+    },
+    "/paymentRequests/{requestId}": {
+      "schema": "PaymentRequest",
+      "description": "User payment submissions"
+    },
+    "/settings/global": {
+      "schema": "Settings",
+      "description": "Global app configuration"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "TraderSense AI",
+  "description": "An advanced AI-powered trading analysis dashboard. Upload charts for instant market verdicts, managed through a secure bKash payment activation system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

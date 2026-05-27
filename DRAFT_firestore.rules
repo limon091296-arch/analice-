@@ -1,0 +1,130 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.username is string && data.username.size() >= 2 && data.username.size() <= 50 &&
+             data.avatarUrl is string && data.avatarUrl.size() <= 500 &&
+             data.isActivated is bool &&
+             (data.keys().hasAll(['username', 'avatarUrl', 'isActivated']) && data.keys().size() == 3);
+    }
+
+    function isValidAnalysis(data) {
+      return data.verdict in ['UP', 'DOWN', 'NEUTRAL'] &&
+             data.reason is string && data.reason.size() <= 5000 &&
+             data.confidence is number && data.confidence >= 0 && data.confidence <= 100 &&
+             data.userId == request.auth.uid &&
+             data.timestamp is number &&
+             (data.keys().hasAll(['verdict', 'reason', 'confidence', 'userId', 'timestamp']) && data.keys().size() == 5);
+    }
+
+    function isValidPaymentRequest(data) {
+      return data.senderNumber is string && data.senderNumber.size() >= 10 && data.senderNumber.size() <= 15 &&
+             data.trxId is string && data.trxId.size() >= 5 && data.trxId.size() <= 50 &&
+             data.amount is number && data.amount > 0 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.userId == request.auth.uid &&
+             data.createdAt is number &&
+             (data.keys().hasAll(['senderNumber', 'trxId', 'amount', 'status', 'userId', 'createdAt']) && data.keys().size() == 6);
+    }
+
+    function isValidSettings(data) {
+      return data.bkashNumber is string && data.bkashNumber.size() >= 10 && data.bkashNumber.size() <= 15 &&
+             (data.keys().hasAll(['bkashNumber']) && data.keys().size() == 1);
+    }
+
+    // --- Rules for Collections ---
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && 
+                      isEmailVerified() &&
+                      isValidUser(incoming()) && 
+                      incoming().isActivated == false; // Prevent self-activation
+      allow update: if isEmailVerified() && (
+                      (isOwner(userId) && 
+                        isValidUser(incoming()) && 
+                        incoming().isActivated == existing().isActivated && // Immutable activation for non-admins
+                        incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl']))
+                      || isAdmin()
+                    );
+    }
+
+    // 2. Analyses Collection
+    match /analyses/{analysisId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && isValidAnalysis(incoming()) && isOwner(incoming().userId);
+      // Analyses are immutable
+      allow update, delete: if isAdmin();
+    }
+
+    // 3. PaymentRequests Collection
+    match /paymentRequests/{requestId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && isValidPaymentRequest(incoming()) && isOwner(incoming().userId) && incoming().status == 'pending';
+      allow update: if isEmailVerified() && (
+                      (isOwner(resource.data.userId) && 
+                        isValidPaymentRequest(incoming()) && 
+                        existing().status == 'pending' && 
+                        incoming().status == 'pending' && 
+                        incoming().diff(existing()).affectedKeys().hasOnly(['senderNumber', 'trxId', 'amount']))
+                      || (isAdmin() && isValidPaymentRequest(incoming()) && (
+                          (existing().status == 'pending' && incoming().status in ['approved', 'rejected']) ||
+                          (incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+                        ))
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // 4. Global Settings
+    match /settings/global {
+      allow read: if isSignedIn(); // All signed in users can see settings
+      allow write: if isAdmin() && isValidSettings(incoming());
+    }
+
+    // 5. Admins Collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn(); // Allow discovery of admin status for UI
+      allow write: if false; // Only manageable via Firebase Console or special script
+    }
+  }
+}
